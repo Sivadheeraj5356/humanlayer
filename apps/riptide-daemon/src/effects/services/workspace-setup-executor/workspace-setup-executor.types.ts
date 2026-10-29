@@ -13,13 +13,15 @@ export type WorkspaceRepoOperationInput = {
 }
 
 export type WorkspaceWorktreeOperationInput = WorkspaceRepoOperationInput & {
-	readonly resolvedSourceCommit: string
+	readonly resolvedSourceCommit?: string
 	readonly branchRemote?: string
+	readonly sourceUnborn?: boolean
 }
 
 export type WorkspacePreflightFacts = {
-	readonly resolvedSourceCommit: string
+	readonly resolvedSourceCommit?: string
 	readonly branchRemote?: string
+	readonly sourceUnborn?: boolean
 }
 
 export type WorkspaceWorktreeFacts = {
