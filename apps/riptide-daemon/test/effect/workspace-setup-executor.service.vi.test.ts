@@ -158,6 +158,48 @@ describe('WorkspaceSetupExecutor', () => {
 		}).pipe(Effect.provide(executorRuntimeLayer), Effect.scoped),
 	)
 
+	it.effect('preflights an unborn source branch and creates an orphan worktree', () =>
+		Effect.gen(function* () {
+			const fileSystem = yield* FileSystem.FileSystem
+			const path = yield* Path.Path
+			const fixture = yield* fileSystem.makeTempDirectoryScoped({ prefix: 'workspace-executor-unborn-' })
+			const source = path.join(fixture, 'source')
+			const target = path.join(fixture, 'target')
+			// A freshly initialized repository: no commits, no branches, no remotes.
+			yield* runProcess('git', ['init', source])
+
+			const executor = yield* WorkspaceSetupExecutor
+			const operation = operationFor(source, target, 'task-unborn')
+			const preflight = yield* executor.preflightRepo(operation)
+			expect(preflight.sourceUnborn).toBe(true)
+			expect(preflight.resolvedSourceCommit).toBeUndefined()
+
+			const worktree = yield* executor.createOrAdoptWorktree({
+				...operation,
+				sourceUnborn: preflight.sourceUnborn,
+			})
+			expect(worktree.targetPath).toBe(target)
+			expect(worktree.adopted).toBe(false)
+			expect((yield* runProcess('git', ['-C', target, 'branch', '--show-current'])).trim()).toBe('task-unborn')
+			// The source repository is untouched: still no commits, no task branch.
+			const sourceRefs = yield* Effect.gen(function* () {
+				const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+				const handle = yield* spawner.spawn(ChildProcess.make('git', ['-C', source, 'show-ref', '--quiet']))
+				return Number(yield* handle.exitCode)
+			}).pipe(Effect.scoped)
+			expect(sourceRefs).not.toBe(0)
+
+			// Re-running setup adopts the still-unborn worktree instead of failing.
+			const adopted = yield* executor.createOrAdoptWorktree({
+				...operation,
+				sourceUnborn: preflight.sourceUnborn,
+			})
+			expect(adopted.adopted).toBe(true)
+			const repreflight = yield* executor.preflightRepo(operation)
+			expect(repreflight.sourceUnborn).toBe(true)
+		}).pipe(Effect.provide(executorRuntimeLayer), Effect.scoped),
+	)
+
 	it.effect('uses the recorded source commit instead of resolving a moved source ref', () =>
 		Effect.gen(function* () {
 			const fileSystem = yield* FileSystem.FileSystem
