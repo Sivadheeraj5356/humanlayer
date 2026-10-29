@@ -11,7 +11,7 @@ export type TargetWorktreeProbeInput = {
 }
 
 export type TargetWorktreeProbeResult =
-	| { readonly match: true; readonly head: string }
+	| { readonly match: true; readonly head?: string }
 	| { readonly match: false; readonly reason: string }
 
 /**
@@ -69,9 +69,15 @@ export const probeTargetWorktree = (input: TargetWorktreeProbeInput) =>
 
 		const head = yield* runGit(['rev-parse', 'HEAD'], targetDirectory)
 		const headCommit = head.stdout.trim()
-		if (head.exitCode !== 0 || headCommit.length === 0)
+		if (head.exitCode !== 0 || headCommit.length === 0) {
+			// A worktree created from an unborn source branch has no commits yet; the
+			// branch identity check above is enough to recognize it as ours.
+			const symbolicHead = yield* runGit(['symbolic-ref', '-q', 'HEAD'], targetDirectory)
+			if (symbolicHead.exitCode === 0 && symbolicHead.stdout.trim() === `refs/heads/${expectedBranch}`)
+				return { match: true } satisfies TargetWorktreeProbeResult
 			return nonMatch(
 				`Target worktree path already exists but its commit could not be resolved: ${targetDirectory}`,
 			)
+		}
 		return { match: true, head: headCommit } satisfies TargetWorktreeProbeResult
 	})
