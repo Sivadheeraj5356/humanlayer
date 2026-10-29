@@ -20,7 +20,11 @@ export const RepoWorkspaceSetupProgressSchema = z.object({
 	localPath: z.string().min(1),
 	status: WorkspaceSetupStageSchema,
 	preflight: z
-		.object({ resolvedSourceCommit: z.string().optional(), branchRemote: z.string().min(1).optional() })
+		.object({
+			resolvedSourceCommit: z.string().optional(),
+			branchRemote: z.string().min(1).optional(),
+			sourceUnborn: z.boolean().optional(),
+		})
 		.optional(),
 	worktree: z
 		.object({
