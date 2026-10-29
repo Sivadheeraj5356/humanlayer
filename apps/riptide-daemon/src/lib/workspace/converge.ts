@@ -14,6 +14,7 @@ import {
 	WorkspaceSetupExecutor,
 	type WorkspaceSetupExecutorRequirements,
 } from '@/effects/services/workspace-setup-executor/workspace-setup-executor.service'
+import type { WorkspaceWorktreeOperationInput } from '@/effects/services/workspace-setup-executor/workspace-setup-executor.types'
 import { Sentry } from '@/instrument'
 import { buildCompatibilityWorkspaceState } from '@/lib/workspace/build-workspace-state'
 import { workspaceSetupStateAllowsSessionLaunch } from '@/lib/workspace/ledger'
@@ -108,7 +109,8 @@ const runStage = (
 		}
 		if (stage === 'worktree') {
 			const resolvedSourceCommit = current.preflight?.resolvedSourceCommit
-			if (resolvedSourceCommit === undefined) {
+			const sourceUnborn = current.preflight?.sourceUnborn === true
+			if (resolvedSourceCommit === undefined && !sourceUnborn) {
 				return yield* Effect.fail(
 					new WorkspaceConvergenceStateError({
 						taskId: input.taskId,
@@ -119,11 +121,14 @@ const runStage = (
 					}),
 				)
 			}
-			const facts = yield* executor.createOrAdoptWorktree({
+			const worktreeInput: Mutable<WorkspaceWorktreeOperationInput> = {
 				...operationInput,
-				resolvedSourceCommit,
-				branchRemote: current.preflight?.branchRemote,
-			})
+			}
+			if (resolvedSourceCommit !== undefined) worktreeInput.resolvedSourceCommit = resolvedSourceCommit
+			if (current.preflight?.branchRemote !== undefined)
+				worktreeInput.branchRemote = current.preflight.branchRemote
+			if (sourceUnborn) worktreeInput.sourceUnborn = true
+			const facts = yield* executor.createOrAdoptWorktree(worktreeInput)
 			const worktree: Mutable<NonNullable<RepoWorkspaceSetupProgress['worktree']>> = {
 				targetPath: facts.targetPath,
 			}
