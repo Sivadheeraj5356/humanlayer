@@ -115,14 +115,18 @@ export const createOrAdoptWorkspaceWorktree = (input: WorkspaceWorktreeOperation
 			remoteBranchExists = remoteBranch.exitCode === 0
 			if (remoteBranchExists) {
 				const sourceBase = input.repo.sourceCommit ?? input.resolvedSourceCommit
-				const ancestryArgs = ['merge-base', '--is-ancestor', sourceBase, remoteTrackingRef]
-				const sourceIsAncestor = yield* runGit(ancestryArgs)
-				if (sourceIsAncestor.exitCode !== 0) {
-					return yield* failCommand(
-						`Remote task branch does not contain the task source commit: ${workspaceUpstreamRef(branchRemote, input.repo.branch)}`,
-						ancestryArgs,
-						sourceIsAncestor,
-					)
+				// An unborn source branch has no commit the remote task branch could
+				// contain, so there is nothing to verify.
+				if (sourceBase !== undefined) {
+					const ancestryArgs = ['merge-base', '--is-ancestor', sourceBase, remoteTrackingRef]
+					const sourceIsAncestor = yield* runGit(ancestryArgs)
+					if (sourceIsAncestor.exitCode !== 0) {
+						return yield* failCommand(
+							`Remote task branch does not contain the task source commit: ${workspaceUpstreamRef(branchRemote, input.repo.branch)}`,
+							ancestryArgs,
+							sourceIsAncestor,
+						)
+					}
 				}
 			}
 		}
@@ -178,15 +182,37 @@ export const createOrAdoptWorkspaceWorktree = (input: WorkspaceWorktreeOperation
 			if (existingBranch.exitCode === 0) {
 				yield* runGit(['worktree', 'prune'])
 			}
+			const sourceCommit = input.repo.sourceCommit ?? input.resolvedSourceCommit
 			const args =
 				existingBranch.exitCode === 0
 					? ['worktree', 'add', targetDirectory, input.repo.branch]
 					: remoteBranchExists && remoteTrackingRef !== undefined
 						? ['worktree', 'add', '--track', '-b', input.repo.branch, targetDirectory, remoteTrackingRef]
-						: ['worktree', 'add', '-b', input.repo.branch, targetDirectory, input.resolvedSourceCommit]
+						: input.sourceUnborn === true
+							? ['worktree', 'add', '--orphan', '-b', input.repo.branch, targetDirectory]
+							: sourceCommit !== undefined
+								? ['worktree', 'add', '-b', input.repo.branch, targetDirectory, sourceCommit]
+								: undefined
+			if (args === undefined) {
+				return yield* Effect.fail(
+					new WorkspaceWorktreeError({
+						...input,
+						localPath: input.repo.localPath,
+						stage: 'worktree',
+						message: 'Workspace setup state is missing its pinned source commit',
+						workingDirectory: sourceDirectory,
+					}),
+				)
+			}
 			const created = yield* runGit(args)
 			if (created.exitCode !== 0) {
-				return yield* failCommand('Failed to create Git worktree', args, created)
+				// --orphan requires Git 2.42; name the real fix instead of surfacing
+				// a raw usage error for older Git installations.
+				const message =
+					input.sourceUnborn === true
+						? 'Failed to create Git worktree for an unborn source branch (requires Git 2.42 or newer; create an initial commit in the repository or upgrade Git)'
+						: 'Failed to create Git worktree'
+				return yield* failCommand(message, args, created)
 			}
 		}
 
