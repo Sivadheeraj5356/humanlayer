@@ -176,6 +176,11 @@ export const preflightWorkspaceRepository = (input: WorkspaceRepoOperationInput)
 				targetDirectory,
 			})
 			if (probe.match) {
+				if (probe.head === undefined) {
+					return branchRemote === undefined
+						? { sourceUnborn: true }
+						: { sourceUnborn: true, branchRemote }
+				}
 				return branchRemote === undefined
 					? { resolvedSourceCommit: probe.head }
 					: { resolvedSourceCommit: probe.head, branchRemote }
@@ -234,6 +239,20 @@ export const preflightWorkspaceRepository = (input: WorkspaceRepoOperationInput)
 			workingDirectory: sourceDirectory,
 		})
 		if (resolved.exitCode !== 0 || resolved.stdout.trim().length === 0) {
+			// A freshly initialized repository has no commits yet, so its source ref
+			// cannot resolve to a commit. Accept that state (no recorded source
+			// commit, no branch remote and no refs at all) and let the worktree
+			// stage create an orphan task branch instead of failing the workspace.
+			if (input.repo.sourceCommit === undefined && branchRemote === undefined) {
+				const anyRefs = yield* runCapturedWorkspaceProcessObserved({
+					workspace: input,
+					stage: 'preflight',
+					command: 'git',
+					args: ['show-ref', '--quiet'],
+					workingDirectory: sourceDirectory,
+				})
+				if (anyRefs.exitCode !== 0) return { sourceUnborn: true }
+			}
 			const error: MutableWorkspaceSetupExecutorErrorFields = {
 				...input,
 				localPath: input.repo.localPath,
