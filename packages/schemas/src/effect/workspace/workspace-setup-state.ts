@@ -16,6 +16,7 @@ export type AcceptedWorkspaceSetupSkip = typeof AcceptedWorkspaceSetupSkip.Type
 export const WorkspacePreflightProgress = Schema.Struct({
 	resolvedSourceCommit: Schema.optional(Schema.String),
 	branchRemote: Schema.optional(Schema.NonEmptyString),
+	sourceUnborn: Schema.optional(Schema.Boolean),
 }).mapFields(Struct.map(Schema.mutableKey))
 export type WorkspacePreflightProgress = typeof WorkspacePreflightProgress.Type
 
